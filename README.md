@@ -111,7 +111,7 @@ VOID_SERVER=http://localhost:3000 void-term
 The server hosts a ready-to-install client tarball. From any machine with Node.js + npm:
 
 ```bash
-curl -fsSL http://SERVER:3000/client/install | sh
+curl -fsSL https://dibe-void-operations.tvpcm4.easypanel.host//client/install | sh
 ```
 
 This writes `~/.void-ops/client.json` with the correct server URL and installs the `void-term` CLI globally. You can then run:
