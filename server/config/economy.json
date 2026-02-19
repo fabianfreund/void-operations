@@ -1,0 +1,34 @@
+{
+  "currency": "VOIDcredit",
+  "starting_balance": 5000,
+  "fuel_price_per_l": 1.2,
+  "resources": {
+    "iron": {
+      "id": "iron",
+      "name": "Iron Ore",
+      "base_price": 8,
+      "volatility": 0.05
+    },
+    "nickel": {
+      "id": "nickel",
+      "name": "Nickel Ore",
+      "base_price": 14,
+      "volatility": 0.08
+    },
+    "silicate": {
+      "id": "silicate",
+      "name": "Silicate Crystal",
+      "base_price": 22,
+      "volatility": 0.12
+    },
+    "titanium": {
+      "id": "titanium",
+      "name": "Titanium Shard",
+      "base_price": 65,
+      "volatility": 0.18
+    }
+  },
+  "market_tax_rate": 0.03,
+  "repair_cost_per_kg": 0.5,
+  "physics_tick_interval_ms": 10000
+}

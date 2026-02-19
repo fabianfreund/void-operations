@@ -1,0 +1,49 @@
+{
+  "hub": {
+    "id": "hub",
+    "name": "Orbital Hub Alpha",
+    "type": "station",
+    "description": "The central command station. Drones are dispatched and recalled here.",
+    "coordinates": { "x": 0, "y": 0 },
+    "has_market": true,
+    "has_refuel": true,
+    "has_repair": true
+  },
+  "asteroid_belt_a": {
+    "id": "asteroid_belt_a",
+    "name": "Kessler Belt — Sector A",
+    "type": "mining_zone",
+    "description": "Dense iron and nickel asteroid field. High yield, moderate danger.",
+    "coordinates": { "x": 320, "y": 85 },
+    "resources": ["iron", "nickel"],
+    "richness": 0.7,
+    "danger_level": 2,
+    "has_market": false,
+    "has_refuel": false,
+    "has_repair": false
+  },
+  "asteroid_belt_b": {
+    "id": "asteroid_belt_b",
+    "name": "Kessler Belt — Sector B",
+    "type": "mining_zone",
+    "description": "Sparse field with rare silicate deposits. Low danger.",
+    "coordinates": { "x": 410, "y": 200 },
+    "resources": ["silicate", "titanium"],
+    "richness": 0.4,
+    "danger_level": 1,
+    "has_market": false,
+    "has_refuel": false,
+    "has_repair": false
+  },
+  "deep_void_outpost": {
+    "id": "deep_void_outpost",
+    "name": "Deep Void Outpost",
+    "type": "outpost",
+    "description": "A remote trading post. Better prices, worse conditions.",
+    "coordinates": { "x": 780, "y": 430 },
+    "resources": [],
+    "has_market": true,
+    "has_refuel": true,
+    "has_repair": false
+  }
+}

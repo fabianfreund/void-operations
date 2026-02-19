@@ -1,0 +1,50 @@
+{
+  "scout": {
+    "id": "scout",
+    "name": "Scout Drone",
+    "description": "Fast, light recon unit with minimal cargo capacity.",
+    "mass_kg": 12,
+    "cargo_capacity_kg": 5,
+    "fuel_tank_l": 20,
+    "fuel_burn_rate_l_per_km": 0.15,
+    "speed_kmh": 120,
+    "mining_power": 0,
+    "base_cost": 500
+  },
+  "miner_mk1": {
+    "id": "miner_mk1",
+    "name": "Miner Mk.I",
+    "description": "Standard mining drone. Reliable, slow, workhorse of the fleet.",
+    "mass_kg": 45,
+    "cargo_capacity_kg": 80,
+    "fuel_tank_l": 60,
+    "fuel_burn_rate_l_per_km": 0.55,
+    "speed_kmh": 40,
+    "mining_power": 10,
+    "base_cost": 2000
+  },
+  "miner_mk2": {
+    "id": "miner_mk2",
+    "name": "Miner Mk.II",
+    "description": "Upgraded mining drone with reinforced drill head and extended fuel cell.",
+    "mass_kg": 70,
+    "cargo_capacity_kg": 150,
+    "fuel_tank_l": 100,
+    "fuel_burn_rate_l_per_km": 0.8,
+    "speed_kmh": 35,
+    "mining_power": 25,
+    "base_cost": 6500
+  },
+  "hauler": {
+    "id": "hauler",
+    "name": "Heavy Hauler",
+    "description": "Massive cargo carrier. Extremely slow but unrivaled cargo hold.",
+    "mass_kg": 200,
+    "cargo_capacity_kg": 500,
+    "fuel_tank_l": 150,
+    "fuel_burn_rate_l_per_km": 1.4,
+    "speed_kmh": 20,
+    "mining_power": 0,
+    "base_cost": 12000
+  }
+}

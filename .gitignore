@@ -1,0 +1,16 @@
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# SQLite database (persisted via Docker volume or local dev)
+server/db/void.db
+server/db/void.db-shm
+server/db/void.db-wal
+data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "name": "void-term",
+  "version": "0.1.0",
+  "description": "Void Operations — terminal client",
+  "main": "src/index.js",
+  "bin": {
+    "void-term": "./bin/void.js"
+  },
+  "scripts": {
+    "start": "node bin/void.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.4",
+    "terminal-kit": "^3.1.1"
+  }
+}

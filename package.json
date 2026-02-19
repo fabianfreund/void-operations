@@ -1,0 +1,19 @@
+{
+  "name": "void-operations",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Terminal-based drone MMO — monorepo root",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "startup": "node scripts/startup.js",
+    "dev:server": "node server/index.js",
+    "dev:client": "node client/bin/void.js",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
