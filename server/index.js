@@ -27,14 +27,15 @@ function getBaseUrl(req) {
 
 const httpServer = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
+  const routePath = pathname.replace(/\/{2,}/g, '/');
 
-  if (pathname === '/health') {
+  if (routePath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     return;
   }
 
-  if (pathname === '/client/void-term.tgz') {
+  if (routePath === '/client/void-term.tgz') {
     if (!fs.existsSync(CLIENT_TARBALL)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Client package not available.');
@@ -48,7 +49,7 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
-  if (pathname === '/client/install') {
+  if (routePath === '/client/install') {
     const baseUrl = getBaseUrl(req);
     const script = `#!/usr/bin/env sh
 set -e

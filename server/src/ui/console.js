@@ -94,7 +94,7 @@ function printBanner(port) {
   console.log(pad(c(A.bold + A.white, '  VOID OPERATIONS  ') + c(A.dim, `Server v0.1.0`)));
   console.log(pad(''));
   console.log(pad(c(A.dim, `  Listening on port `) + c(A.bold + A.green, `:${port}`)));
-  console.log(pad(c(A.dim, `  SQLite: `) + c(A.gray, 'node:sqlite (built-in)')));
+  console.log(pad(c(A.dim, `  SQLite: `) + c(A.gray, 'better-sqlite3')));
   console.log(pad(c(A.dim, `  Physics tick: `) + c(A.yellow, '10 s')));
   console.log(c(A.bold + A.cyan, '╚' + '═'.repeat(w) + '╝'));
   console.log('');
@@ -257,6 +257,11 @@ function start(io, port) {
   _io = io;
 
   printBanner(port);
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    log('warn', 'TTY not detected — console commands disabled.');
+    return;
+  }
 
   rl = readline.createInterface({
     input: process.stdin,
