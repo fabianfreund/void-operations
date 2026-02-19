@@ -15,6 +15,7 @@ const DroneModel = require('../models/drone');
 const Physics = require('../systems/physics');
 const Mining = require('../systems/mining');
 const { log } = require('../ui/console');
+const world = require('../../config/world.json');
 const db = require('../../db/init');
 
 function registerHandlers(io, socket) {
@@ -112,6 +113,20 @@ function registerHandlers(io, socket) {
       return ack('fleet:error', { message: 'Drone must be idle to scan.' });
     }
 
+    const origin = world[drone.location_id];
+    const originCoords = origin?.coordinates ?? { x: 0, y: 0 };
+    const SCAN_RANGE = 250;
+    const nearby = Object.values(world)
+      .filter((loc) => loc.id !== drone.location_id)
+      .map((loc) => {
+        const dx = (loc.coordinates?.x ?? 0) - originCoords.x;
+        const dy = (loc.coordinates?.y ?? 0) - originCoords.y;
+        const distance = Math.round(Math.sqrt(dx * dx + dy * dy));
+        return { ...loc, distance };
+      })
+      .filter((loc) => loc.distance <= SCAN_RANGE)
+      .sort((a, b) => a.distance - b.distance);
+
     const rows = db.prepare(`
       SELECT d.id, d.name, d.type_id, d.status, d.location_id,
              u.username AS owner_username, u.org_name AS owner_org
@@ -121,7 +136,12 @@ function registerHandlers(io, socket) {
       ORDER BY d.status, d.name
     `).all(drone.location_id, drone.id);
 
-    ack('fleet:scan', { location: drone.location_id, ships: rows });
+    ack('fleet:scan', {
+      location: drone.location_id,
+      location_info: origin ?? null,
+      ships: rows,
+      nearby,
+    });
   }));
 
   // ── Commands ──────────────────────────────────────────────────────────────

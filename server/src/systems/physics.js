@@ -65,25 +65,50 @@ function tick(io) {
     const spec = DroneModel.spec(drone.type_id);
 
     if (drone.status === 'travelling') {
+      const { durationMs } = travelParams(drone.location_id, drone.destination_id, drone.type_id);
+      const fullEtaSec = drone.task_started_at + Math.floor(durationMs / 1000);
+
       // Arrived at destination
-      DroneModel.updateStatus(drone.id, {
-        status: 'idle',
-        location_id: drone.destination_id,
-        destination_id: null,
-        task_started_at: null,
-        task_eta_at: null,
-      });
+      if (drone.task_eta_at < fullEtaSec) {
+        DroneModel.updateStatus(drone.id, {
+          status: 'offline',
+          destination_id: drone.destination_id,
+          task_started_at: null,
+          task_eta_at: null,
+        });
 
-      logEvent.run('drone_arrived', JSON.stringify({
-        drone_id: drone.id,
-        location: drone.destination_id,
-      }));
+        logEvent.run('drone_offline', JSON.stringify({
+          drone_id: drone.id,
+          location: drone.location_id,
+          destination: drone.destination_id,
+        }));
 
-      pushToOwner(io, drone.owner_id, 'drone:arrived', {
-        droneId: drone.id,
-        droneName: drone.name,
-        location: drone.destination_id,
-      });
+        pushToOwner(io, drone.owner_id, 'drone:offline', {
+          droneId: drone.id,
+          droneName: drone.name,
+          location: drone.location_id,
+          destination: drone.destination_id,
+        });
+      } else {
+        DroneModel.updateStatus(drone.id, {
+          status: 'idle',
+          location_id: drone.destination_id,
+          destination_id: null,
+          task_started_at: null,
+          task_eta_at: null,
+        });
+
+        logEvent.run('drone_arrived', JSON.stringify({
+          drone_id: drone.id,
+          location: drone.destination_id,
+        }));
+
+        pushToOwner(io, drone.owner_id, 'drone:arrived', {
+          droneId: drone.id,
+          droneName: drone.name,
+          location: drone.destination_id,
+        });
+      }
     }
 
     if (drone.status === 'mining') {
@@ -136,19 +161,24 @@ function dispatchTravel(droneId, destinationId) {
 
   const { durationMs, fuelCost } = travelParams(drone.location_id, destinationId, drone.type_id);
 
-  if (drone.fuel_current_l < fuelCost) {
-    return `Insufficient fuel. Need ${fuelCost.toFixed(1)}L, have ${drone.fuel_current_l.toFixed(1)}L.`;
-  }
-
   const nowMs = Date.now();
-  const etaSec = Math.floor((nowMs + durationMs) / 1000);
+  const fullEtaSec = Math.floor((nowMs + durationMs) / 1000);
+
+  let etaSec = fullEtaSec;
+  let newFuel = drone.fuel_current_l - fuelCost;
+  if (newFuel < 0) {
+    const fuelRatio = Math.max(0, drone.fuel_current_l / fuelCost);
+    const runoutMs = Math.floor(durationMs * fuelRatio);
+    etaSec = Math.floor((nowMs + runoutMs) / 1000);
+    newFuel = 0;
+  }
 
   DroneModel.updateStatus(droneId, {
     status: 'travelling',
     destination_id: destinationId,
     task_started_at: Math.floor(nowMs / 1000),
     task_eta_at: etaSec,
-    fuel_current_l: parseFloat((drone.fuel_current_l - fuelCost).toFixed(3)),
+    fuel_current_l: parseFloat(newFuel.toFixed(3)),
   });
 
   return null; // success

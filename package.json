@@ -11,7 +11,8 @@
     "startup": "node scripts/startup.js",
     "dev:server": "node server/index.js",
     "dev:client": "node client/bin/void.js",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\""
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build:client-tarball": "node scripts/build-client-tarball.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

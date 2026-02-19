@@ -11,8 +11,9 @@ const socket = require('./net/socket');
 const { runAuthFlow } = require('./ui/auth');
 const dash = require('./ui/dashboard');
 const world = require('./world'); // local copy of world config
+const { getServerUrl } = require('./config');
 
-const SERVER_URL = process.env.VOID_SERVER ?? 'http://localhost:3000';
+const SERVER_URL = getServerUrl();
 
 async function main() {
   term.fullscreen(true);
@@ -32,14 +33,26 @@ async function main() {
   // ── Server-push events ───────────────────────────────────────────────────
 
   socket.on('drone:arrived', (data) => {
-    dash.addLog(`Drone "${data.droneName}" arrived at ${data.location}`, 'green');
+    dash.addLog(`Drone "${data.droneName}" arrived at ${data.location}`, 'green', {
+      droneId: data.droneId,
+    });
     dash.stopProgressTracking();
   });
 
   socket.on('drone:mined', (data) => {
     dash.addLog(
       `Drone "${data.droneName}" mined ${data.yieldKg.toFixed(1)} kg of ${data.resource}`,
-      'cyan'
+      'cyan',
+      { droneId: data.droneId }
+    );
+    dash.stopProgressTracking();
+  });
+
+  socket.on('drone:offline', (data) => {
+    dash.addLog(
+      `Drone "${data.droneName}" went offline near ${data.location} en route to ${data.destination}`,
+      'red',
+      { droneId: data.droneId }
     );
     dash.stopProgressTracking();
   });
@@ -55,6 +68,7 @@ async function main() {
   // ── Auth ─────────────────────────────────────────────────────────────────
 
   const user = await runAuthFlow();
+  dash.addLog('Welcome back, commander.');
 
   // ── Main Loop ─────────────────────────────────────────────────────────────
 
@@ -72,7 +86,7 @@ async function main() {
       dash.renderHeader(user);
       dash.renderFleetTable(drones);
 
-      const drone = await dash.showDroneSelector(drones);
+      let drone = await dash.showDroneSelector(drones);
       if (!drone) continue;
 
       while (true) {
@@ -85,114 +99,118 @@ async function main() {
           await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
         }
 
-        if (action === 'Scan Nearby Ships') {
+        if (action === 'Commands') {
+          while (true) {
+            const cmd = await dash.showDroneCommandMenu(drone);
+            if (cmd === '← Back') break;
+
+            if (cmd === 'Travel') {
+              dash.renderHeader(user);
+              const location = await dash.showLocationSelector(world, drone.location_id);
+              if (!location) continue;
+
+              try {
+                const result = await socket.travel(drone.id, location.id);
+                const updated = result.drone;
+            dash.addLog(
+              `${updated.name} dispatched to ${location.name} — ETA ${Math.max(0, updated.task_eta_at - Math.floor(Date.now() / 1000))}s`,
+              'yellow',
+              { droneId: drone.id }
+            );
+            dash.startProgressTracking(updated);
+            dash.renderCommandResult('Travel', [
+              `Dispatched to ${location.name}.`,
+              `Status: ${updated.status.toUpperCase()} · ETA ${Math.max(0, updated.task_eta_at - Math.floor(Date.now() / 1000))}s`,
+              `Fuel: ${updated.fuel_current_l.toFixed(1)}L`,
+            ], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            drone = updated;
+          } catch (err) {
+            dash.addLog(`Travel failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Travel Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
+        }
+
+        if (cmd === 'Mine') {
+          try {
+            const result = await socket.mine(drone.id);
+            const updated = result.drone;
+            dash.addLog(`${updated.name} started mining at ${updated.location_id}`, 'cyan', {
+              droneId: drone.id,
+            });
+            dash.startProgressTracking(updated);
+            dash.renderCommandResult('Mining', [
+              `Mining started at ${updated.location_id}.`,
+              `Status: ${updated.status.toUpperCase()}`,
+            ], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            drone = updated;
+          } catch (err) {
+            dash.addLog(`Mine failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Mining Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
+        }
+
+        if (cmd === 'Sell Cargo') {
+          try {
+            const result = await socket.sell(drone.id);
+            user.credits += result.credits;
+            dash.addLog(`Sold cargo for ${result.credits.toFixed(0)} VOIDcredits`, 'green', {
+              droneId: drone.id,
+            });
+            for (const item of result.sold) {
+              dash.addLog(`  ${item.resource}: ${item.quantity_kg.toFixed(1)}kg @ ${item.unit_price} = ${item.net_credits}cr`, 'white', {
+                droneId: drone.id,
+              });
+            }
+            dash.renderCommandResult('Sell Cargo', [
+              `Sold cargo for ${result.credits.toFixed(0)} VOIDcredits.`,
+              `Items: ${result.sold.length}`,
+            ], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            drone = await socket.getDrone(drone.id);
+          } catch (err) {
+            dash.addLog(`Sell failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Sell Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
+        }
+
+        if (cmd === 'Refuel') {
+          try {
+            const result = await socket.refuel(drone.id);
+            user.credits -= result.cost;
+            dash.addLog(
+              `Refueled ${result.litres_added.toFixed(1)}L for ${result.cost.toFixed(0)} credits`,
+              'blue',
+              { droneId: drone.id }
+            );
+            dash.renderCommandResult('Refuel', [
+              `Added ${result.litres_added.toFixed(1)}L of fuel.`,
+              `Cost: ${result.cost.toFixed(0)} credits.`,
+            ], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            drone = await socket.getDrone(drone.id);
+          } catch (err) {
+            dash.addLog(`Refuel failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Refuel Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
+        }
+          }
+        }
+
+        if (action === 'Scan') {
           try {
             const result = await socket.scanNearby(drone.id);
-            dash.renderScanResults(result);
+            dash.renderScanResults(result, drone.id);
           } catch (err) {
-            dash.addLog(`Scan failed: ${err.message}`, 'red');
+            dash.addLog(`Scan failed: ${err.message}`, 'red', { droneId: drone.id });
           }
           await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
         }
-      }
-    }
-
-    if (choice === 'Travel') {
-      const drones = await socket.listFleet();
-      const idleDrones = drones.filter((d) => d.status === 'idle');
-      if (!idleDrones.length) {
-        dash.addLog('No idle drones available to travel.', 'yellow');
-        continue;
-      }
-
-      dash.renderHeader(user);
-      const drone = await dash.showDroneSelector(idleDrones);
-      if (!drone) continue;
-
-      dash.renderHeader(user);
-      const location = await dash.showLocationSelector(world, drone.location_id);
-      if (!location) continue;
-
-      try {
-        const result = await socket.travel(drone.id, location.id);
-        const updated = result.drone;
-        dash.addLog(
-          `${updated.name} dispatched to ${location.name} — ETA ${Math.max(0, updated.task_eta_at - Math.floor(Date.now() / 1000))}s`,
-          'yellow'
-        );
-        dash.startProgressTracking(updated);
-      } catch (err) {
-        dash.addLog(`Travel failed: ${err.message}`, 'red');
-      }
-    }
-
-    if (choice === 'Mine') {
-      const drones = await socket.listFleet();
-      const idleDrones = drones.filter((d) => d.status === 'idle');
-      if (!idleDrones.length) {
-        dash.addLog('No idle drones available.', 'yellow');
-        continue;
-      }
-
-      dash.renderHeader(user);
-      const drone = await dash.showDroneSelector(idleDrones);
-      if (!drone) continue;
-
-      try {
-        const result = await socket.mine(drone.id);
-        const updated = result.drone;
-        dash.addLog(`${updated.name} started mining at ${updated.location_id}`, 'cyan');
-        dash.startProgressTracking(updated);
-      } catch (err) {
-        dash.addLog(`Mine failed: ${err.message}`, 'red');
-      }
-    }
-
-    if (choice === 'Sell Cargo') {
-      const drones = await socket.listFleet();
-      dash.renderHeader(user);
-      const drone = await dash.showDroneSelector(drones);
-      if (!drone) continue;
-
-      try {
-        const result = await socket.sell(drone.id);
-        user.credits += result.credits;
-        dash.addLog(`Sold cargo for ${result.credits.toFixed(0)} VOIDcredits`, 'green');
-        for (const item of result.sold) {
-          dash.addLog(`  ${item.resource}: ${item.quantity_kg.toFixed(1)}kg @ ${item.unit_price} = ${item.net_credits}cr`, 'white');
-        }
-      } catch (err) {
-        dash.addLog(`Sell failed: ${err.message}`, 'red');
-      }
-    }
-
-    if (choice === 'Refuel') {
-      const drones = await socket.listFleet();
-      const idleDrones = drones.filter((d) => d.status === 'idle');
-      dash.renderHeader(user);
-      const drone = await dash.showDroneSelector(idleDrones);
-      if (!drone) continue;
-
-      try {
-        const result = await socket.refuel(drone.id);
-        user.credits -= result.cost;
-        dash.addLog(
-          `Refueled ${result.litres_added.toFixed(1)}L for ${result.cost.toFixed(0)} credits`,
-          'blue'
-        );
-      } catch (err) {
-        dash.addLog(`Refuel failed: ${err.message}`, 'red');
-      }
-    }
-
-    if (choice === 'Refresh Status') {
-      const drones = await socket.listFleet();
-      const active = drones.find((d) => d.status !== 'idle');
-      if (active) {
-        dash.startProgressTracking(active);
-        dash.addLog(`Tracking: ${active.name} [${active.status}]`, 'cyan');
-      } else {
-        dash.addLog('All drones idle.', 'green');
       }
     }
 
@@ -215,16 +233,36 @@ async function main() {
 
         if (action === 'List Organizations') {
           const orgs = await socket.listOrganizations();
+          dash.renderHeader(user);
           dash.renderOrganizations(orgs);
-          await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          await dash.waitForBack();
         }
 
         if (action === 'List Players') {
           const players = await socket.listPlayers();
+          dash.renderHeader(user);
           dash.renderPlayers(players);
-          await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          await dash.waitForBack();
+        }
+
+        if (action === 'Settings') {
+          while (true) {
+            const selected = await dash.showSettingsMenu();
+            if (selected === 1) break;
+            if (selected === 0) {
+              dash.toggleLogSidebar();
+              dash.renderHeader(user);
+            }
+          }
         }
       }
+    }
+
+    if (choice === 'Status') {
+      const drones = await socket.listFleet();
+      dash.renderHeader(user);
+      dash.renderOverallStatus(user, drones);
+      await dash.waitForBack();
     }
   }
 }

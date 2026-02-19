@@ -1,6 +1,8 @@
 node_modules/
 server/node_modules/
 client/node_modules/
+client/src/server-url.generated.js
+server/client-dist/
 
 # SQLite database (persisted via Docker volume or local dev)
 server/db/void.db

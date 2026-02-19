@@ -78,6 +78,7 @@ void-term
 |---|---|---|
 | `PORT` | `3000` | Server listen port |
 | `VOID_SERVER` | `http://localhost:3000` | Server URL used by the client |
+| `PUBLIC_URL` | — | Base URL used for `/client/install` responses (useful behind a proxy) |
 
 ---
 
@@ -104,6 +105,36 @@ The server is reachable at `http://localhost:3000`. Connect the client with:
 ```bash
 VOID_SERVER=http://localhost:3000 void-term
 ```
+
+### Download the client from the server
+
+The server hosts a ready-to-install client tarball. From any machine with Node.js + npm:
+
+```bash
+curl -fsSL http://SERVER:3000/client/install | sh
+```
+
+This writes `~/.void-ops/client.json` with the correct server URL and installs the `void-term` CLI globally. You can then run:
+
+```bash
+void-term
+```
+
+If you're running the server outside Docker, generate the tarball first:
+
+```bash
+npm run build:client-tarball
+```
+
+### Build-time server URL (optional)
+
+If you want the baked-in default server URL inside the client package during image build:
+
+```bash
+docker build --build-arg VOID_SERVER_URL=http://SERVER:3000 -t void-operations .
+```
+
+For reverse proxies or HTTPS, set `PUBLIC_URL` on the server so the install script returns the correct URL.
 
 ---
 

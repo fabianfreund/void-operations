@@ -5,15 +5,45 @@
 const world = {
   hub: {
     id: 'hub',
-    name: 'Orbital Hub Alpha',
+    name: 'Asteria Central Station',
     type: 'station',
     coordinates: { x: 0, y: 0 },
+  },
+  lyra_trade_hub: {
+    id: 'lyra_trade_hub',
+    name: 'Lyra Trade Hub',
+    type: 'station',
+    coordinates: { x: 180, y: -140 },
+  },
+  helios_relay: {
+    id: 'helios_relay',
+    name: 'Helios Relay',
+    type: 'station',
+    coordinates: { x: -260, y: 220 },
+  },
+  vega_shipyard: {
+    id: 'vega_shipyard',
+    name: 'Vega Shipyard',
+    type: 'station',
+    coordinates: { x: -420, y: -120 },
   },
   asteroid_belt_a: {
     id: 'asteroid_belt_a',
     name: 'Kessler Belt — Sector A',
     type: 'mining_zone',
     coordinates: { x: 320, y: 85 },
+  },
+  asteroid_field_delta: {
+    id: 'asteroid_field_delta',
+    name: 'Delta Drifts',
+    type: 'mining_zone',
+    coordinates: { x: 60, y: -40 },
+  },
+  asteroid_field_echo: {
+    id: 'asteroid_field_echo',
+    name: 'Echo Scatter',
+    type: 'mining_zone',
+    coordinates: { x: -90, y: 30 },
   },
   asteroid_belt_b: {
     id: 'asteroid_belt_b',

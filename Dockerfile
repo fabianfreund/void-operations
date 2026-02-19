@@ -8,20 +8,29 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
-# Copy only the server package manifest first (layer cache optimization)
-COPY server/package*.json ./
+ARG VOID_SERVER_URL=
+ENV VOID_SERVER_URL=${VOID_SERVER_URL}
 
-RUN npm install --omit=dev
+# Copy package manifests for cache-friendly installs
+COPY server/package*.json ./server/
+COPY client/package*.json ./client/
 
-# Copy the rest of the server source
-COPY server/ .
+RUN npm install --omit=dev --prefix server
+
+# Copy source
+COPY server ./server
+COPY client ./client
+COPY scripts/build-client-tarball.js ./scripts/
+
+# Build the client tarball for download
+RUN node scripts/build-client-tarball.js
 
 # Persistent data directory (mounted as a volume in docker-compose)
-RUN mkdir -p /app/db
+RUN mkdir -p /app/server/db
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-CMD ["node", "index.js"]
+CMD ["node", "server/index.js"]
