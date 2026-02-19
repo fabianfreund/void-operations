@@ -80,6 +80,12 @@ void-term
 | `VOID_SERVER` | `http://localhost:3000` | Server URL used by the client |
 | `PUBLIC_URL` | — | Base URL used for `/client/install` responses (useful behind a proxy) |
 
+Example (EasyPanel / Docker env):
+
+```
+PUBLIC_URL=https://dibe-void-operations.tvpcm4.easypanel.host
+```
+
 ---
 
 ## Docker Deployment

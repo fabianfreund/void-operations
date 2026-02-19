@@ -25,6 +25,20 @@ function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function logRequest(req, statusCode) {
+  const ip =
+    (Array.isArray(req.headers['x-forwarded-for'])
+      ? req.headers['x-forwarded-for'][0]
+      : req.headers['x-forwarded-for']) ||
+    req.socket.remoteAddress ||
+    '-';
+  const ua = req.headers['user-agent'] || '-';
+  serverConsole.log(
+    'info',
+    `${req.method} ${req.url} -> ${statusCode} (${ip}) "${ua}"`
+  );
+}
+
 const httpServer = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
   const routePath = pathname.replace(/\/{2,}/g, '/');
@@ -32,6 +46,7 @@ const httpServer = http.createServer((req, res) => {
   if (routePath === '/' || routePath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
+    logRequest(req, 200);
     return;
   }
 
@@ -39,6 +54,7 @@ const httpServer = http.createServer((req, res) => {
     if (!fs.existsSync(CLIENT_TARBALL)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Client package not available.');
+      logRequest(req, 404);
       return;
     }
     res.writeHead(200, {
@@ -46,6 +62,7 @@ const httpServer = http.createServer((req, res) => {
       'Content-Disposition': 'attachment; filename="void-term.tgz"',
     });
     fs.createReadStream(CLIENT_TARBALL).pipe(res);
+    res.on('finish', () => logRequest(req, 200));
     return;
   }
 
@@ -67,11 +84,13 @@ echo "Installed void-term. Run: void-term"
 `;
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end(script);
+    logRequest(req, 200);
     return;
   }
 
   res.writeHead(404);
   res.end();
+  logRequest(req, 404);
 });
 
 const io = new Server(httpServer, {
