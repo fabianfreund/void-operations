@@ -29,7 +29,7 @@ const httpServer = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
   const routePath = pathname.replace(/\/{2,}/g, '/');
 
-  if (routePath === '/health') {
+  if (routePath === '/' || routePath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     return;
