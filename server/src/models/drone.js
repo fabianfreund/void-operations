@@ -3,6 +3,7 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db/init');
 const droneSpecs = require('../../config/drones.json');
+const world = require('../../config/world.json');
 
 const DroneModel = {
   create(ownerId, typeId, name) {
@@ -10,10 +11,11 @@ const DroneModel = {
     if (!spec) throw new Error(`Unknown drone type: ${typeId}`);
 
     const id = uuidv4();
+    const spawn = world.hub?.coordinates ?? { x: 0, y: 0 };
     db.prepare(`
-      INSERT INTO drones (id, owner_id, type_id, name, fuel_current_l)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, ownerId, typeId, name, spec.fuel_tank_l);
+      INSERT INTO drones (id, owner_id, type_id, name, fuel_current_l, coord_x, coord_y)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, ownerId, typeId, name, spec.fuel_tank_l, spawn.x, spawn.y);
 
     return this.findById(id);
   },
@@ -29,7 +31,7 @@ const DroneModel = {
   // Returns ALL active drones across all users (used by physics tick)
   findAllActive() {
     return db.prepare(
-      "SELECT * FROM drones WHERE status != 'idle'"
+      "SELECT * FROM drones WHERE status IN ('travelling', 'mining', 'emergency')"
     ).all();
   },
 
@@ -39,6 +41,11 @@ const DroneModel = {
       .join(', ');
     const values = [...Object.values(fields), id];
     db.prepare(`UPDATE drones SET ${sets} WHERE id = ?`).run(...values);
+  },
+
+  rename(id, name) {
+    db.prepare('UPDATE drones SET name = ? WHERE id = ?').run(name, id);
+    return this.findById(id);
   },
 
   addInventory(droneId, resourceId, quantityKg) {

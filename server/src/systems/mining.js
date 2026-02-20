@@ -32,7 +32,9 @@ const MiningSystem = {
   sellCargo(droneId) {
     const drone = DroneModel.findById(droneId);
     if (!drone) return { ok: false, error: 'Drone not found.' };
-    if (drone.status !== 'idle') return { ok: false, error: 'Drone must be idle to sell cargo.' };
+    if (drone.status !== 'idle' && drone.status !== 'emergency') {
+      return { ok: false, error: 'Drone must be idle or emergency to sell cargo.' };
+    }
 
     const location = world[drone.location_id];
     if (!location?.has_market) {
@@ -77,7 +79,9 @@ const MiningSystem = {
   refuel(droneId, litres) {
     const drone = DroneModel.findById(droneId);
     if (!drone) return { ok: false, error: 'Drone not found.' };
-    if (drone.status !== 'idle') return { ok: false, error: 'Drone must be idle to refuel.' };
+    if (drone.status !== 'idle' && drone.status !== 'emergency') {
+      return { ok: false, error: 'Drone must be idle or emergency to refuel.' };
+    }
 
     const location = world[drone.location_id];
     if (!location?.has_refuel) return { ok: false, error: 'No refueling available here.' };
@@ -95,9 +99,19 @@ const MiningSystem = {
     }
 
     UserModel.updateCredits(drone.owner_id, -cost);
-    DroneModel.updateStatus(droneId, {
+    const update = {
       fuel_current_l: parseFloat((drone.fuel_current_l + actualLitres).toFixed(3)),
-    });
+    };
+
+    if (drone.status === 'emergency') {
+      update.status = 'idle';
+      update.destination_id = null;
+      update.task_started_at = null;
+      update.task_eta_at = null;
+      update.battery_remaining_sec = null;
+    }
+
+    DroneModel.updateStatus(droneId, update);
 
     return { ok: true, litres_added: actualLitres, cost };
   },

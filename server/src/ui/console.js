@@ -114,6 +114,7 @@ function handleCommand(input) {
         ['players',         'List all registered accounts and last-seen time'],
         ['drones',          'List all non-idle drones across all players'],
         ['tick',            'Force an immediate physics tick'],
+        ['tickrate [ms]',   'Show or set physics tick interval in milliseconds'],
         ['broadcast <msg>', 'Send a system message to all connected clients'],
         ['quit / exit',     'Gracefully shut down the server'],
       ];
@@ -133,7 +134,9 @@ function handleCommand(input) {
       const ss = String(uptimeSec % 60).padStart(2, '0');
 
       const connected = _io ? _io.engine.clientsCount : 0;
-      const activeDrones = db.prepare("SELECT COUNT(*) as n FROM drones WHERE status != 'idle'").get().n;
+      const activeDrones = db.prepare(
+        "SELECT COUNT(*) as n FROM drones WHERE status IN ('travelling', 'mining', 'emergency')"
+      ).get().n;
       const totalUsers = db.prepare('SELECT COUNT(*) as n FROM users').get().n;
       const totalDrones = db.prepare('SELECT COUNT(*) as n FROM drones').get().n;
 
@@ -180,7 +183,7 @@ function handleCommand(input) {
     case 'drones': {
       const drones = db.prepare(
         "SELECT d.name, d.type_id, d.status, d.location_id, d.destination_id, d.task_eta_at, u.username " +
-        "FROM drones d JOIN users u ON d.owner_id = u.id WHERE d.status != 'idle' ORDER BY d.status"
+        "FROM drones d JOIN users u ON d.owner_id = u.id WHERE d.status IN ('travelling', 'mining', 'emergency') ORDER BY d.status"
       ).all();
 
       if (!drones.length) {
@@ -188,7 +191,7 @@ function handleCommand(input) {
         break;
       }
 
-      const statusColor = { travelling: A.yellow, mining: A.cyan, returning: A.blue };
+      const statusColor = { travelling: A.yellow, emergency: A.yellow, mining: A.cyan, returning: A.blue };
       const nowSec = Math.floor(Date.now() / 1000);
 
       console.log('');
@@ -216,6 +219,24 @@ function handleCommand(input) {
       log('physics', 'Manual tick triggered');
       Physics.tick(_io);
       log('ok', 'Tick complete');
+      break;
+    }
+
+    case 'tickrate': {
+      const Physics = require('../systems/physics');
+      if (!args.length) {
+        log('physics', `Current tick interval: ${Physics.getTickIntervalMs()}ms`);
+        break;
+      }
+
+      const value = Number(args[0]);
+      if (!Number.isFinite(value) || value < 100 || value > 600000) {
+        console.log(c(A.dim, '  Usage: tickrate <ms>   (range: 100..600000)\n'));
+        break;
+      }
+
+      const updatedMs = Physics.setTickIntervalMs(_io, Math.floor(value));
+      log('physics', `Tick interval updated to ${updatedMs}ms (${(updatedMs / 1000).toFixed(2)}s)`);
       break;
     }
 

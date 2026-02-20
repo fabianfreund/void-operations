@@ -16,6 +16,7 @@ const Physics = require('../systems/physics');
 const Mining = require('../systems/mining');
 const { log } = require('../ui/console');
 const world = require('../../config/world.json');
+const economy = require('../../config/economy.json');
 const db = require('../../db/init');
 
 function registerHandlers(io, socket) {
@@ -35,6 +36,15 @@ function registerHandlers(io, socket) {
 
   function ack(event, data) {
     socket.emit(event, data);
+  }
+
+  function droneCoordinates(drone) {
+    if (Number.isFinite(drone?.coord_x) && Number.isFinite(drone?.coord_y)) {
+      return { x: drone.coord_x, y: drone.coord_y };
+    }
+    const loc = world[drone?.location_id];
+    if (loc?.coordinates) return loc.coordinates;
+    return { x: 0, y: 0 };
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -109,12 +119,12 @@ function registerHandlers(io, socket) {
     if (!drone || drone.owner_id !== authedUser.id) {
       return ack('fleet:error', { message: 'Drone not found.' });
     }
-    if (drone.status !== 'idle') {
-      return ack('fleet:error', { message: 'Drone must be idle to scan.' });
+    if (drone.status !== 'idle' && drone.status !== 'emergency') {
+      return ack('fleet:error', { message: 'Drone must be idle or emergency to scan.' });
     }
 
     const origin = world[drone.location_id];
-    const originCoords = origin?.coordinates ?? { x: 0, y: 0 };
+    const originCoords = droneCoordinates(drone);
     const SCAN_RANGE = 250;
     const nearby = Object.values(world)
       .filter((loc) => loc.id !== drone.location_id)
@@ -137,8 +147,16 @@ function registerHandlers(io, socket) {
     `).all(drone.location_id, drone.id);
 
     ack('fleet:scan', {
-      location: drone.location_id,
-      location_info: origin ?? null,
+      location: origin
+        ? drone.location_id
+        : `deep_space (${originCoords.x.toFixed(1)}, ${originCoords.y.toFixed(1)})`,
+      location_info: origin ?? {
+        id: 'deep_space',
+        name: 'Deep Space Position',
+        type: 'deep_space',
+        description: `Open-space position at (${originCoords.x.toFixed(1)}, ${originCoords.y.toFixed(1)}).`,
+        coordinates: originCoords,
+      },
       ships: rows,
       nearby,
     });
@@ -196,6 +214,34 @@ function registerHandlers(io, socket) {
     ack('cmd:ok', { action: 'refuel', ...result });
   }));
 
+  socket.on('cmd:stop', requireAuth(({ droneId } = {}) => {
+    const drone = DroneModel.findById(droneId);
+    if (!drone || drone.owner_id !== authedUser.id) {
+      return ack('cmd:error', { message: 'Drone not found.' });
+    }
+
+    const err = Physics.stopInPlace(droneId);
+    if (err) return ack('cmd:error', { message: err });
+
+    const updated = DroneModel.findById(droneId);
+    ack('cmd:ok', { action: 'stop', drone: enrichDrone(updated) });
+  }));
+
+  socket.on('cmd:rename', requireAuth(({ droneId, name } = {}) => {
+    const drone = DroneModel.findById(droneId);
+    if (!drone || drone.owner_id !== authedUser.id) {
+      return ack('cmd:error', { message: 'Drone not found.' });
+    }
+
+    const nextName = String(name ?? '').trim();
+    if (nextName.length < 3 || nextName.length > 32) {
+      return ack('cmd:error', { message: 'Drone name must be 3–32 characters.' });
+    }
+
+    const updated = DroneModel.rename(droneId, nextName);
+    ack('cmd:ok', { action: 'rename', drone: enrichDrone(updated) });
+  }));
+
   // ── Administration ─────────────────────────────────────────────────────
 
   socket.on('org:set', requireAuth(({ name } = {}) => {
@@ -224,6 +270,31 @@ function registerHandlers(io, socket) {
     ack('players:list', players);
   }));
 
+  socket.on('players:reset', requireAuth(({ playerId } = {}) => {
+    if (!playerId) {
+      return ack('players:error', { message: 'playerId is required.' });
+    }
+
+    const target = UserModel.findById(playerId);
+    if (!target) {
+      return ack('players:error', { message: 'Player not found.' });
+    }
+
+    const resetPlayer = db.transaction(() => {
+      db.prepare('DELETE FROM drones WHERE owner_id = ?').run(playerId);
+      db.prepare('UPDATE users SET credits = ?, org_name = NULL WHERE id = ?')
+        .run(economy.starting_balance, playerId);
+      DroneModel.create(playerId, 'scout', `${target.username}'s Scout`);
+    });
+
+    resetPlayer();
+
+    const updated = UserModel.findById(playerId);
+    if (updated.id === authedUser.id) authedUser = updated;
+    log('warn', `Player reset: ${updated.username} (${updated.id})`);
+    ack('players:reset', { player: sanitizeUser(updated) });
+  }));
+
   // ── Disconnect ────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {
@@ -246,11 +317,16 @@ function enrichDrone(drone) {
   const inventory = DroneModel.getInventory(drone.id);
   const etaMs = drone.task_eta_at ? drone.task_eta_at * 1000 : null;
   const progressPct = calcProgress(drone);
+  const emergencyBatterySec =
+    drone.status === 'emergency' && drone.task_eta_at
+      ? Math.max(0, drone.task_eta_at - Math.floor(Date.now() / 1000))
+      : drone.battery_remaining_sec;
 
   return {
     ...drone,
     spec,
     inventory,
+    battery_remaining_sec: emergencyBatterySec,
     eta_ms: etaMs,
     progress_pct: progressPct,
   };

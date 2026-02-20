@@ -78,6 +78,32 @@
     "has_refuel": false,
     "has_repair": false
   },
+  "asteroid_field_alpha_close": {
+    "id": "asteroid_field_alpha_close",
+    "name": "Alpha Close Drifts",
+    "type": "mining_zone",
+    "description": "Near-hub training field with light ore pockets and minimal travel time.",
+    "coordinates": { "x": 12, "y": -8 },
+    "resources": ["iron", "silicate"],
+    "richness": 0.2,
+    "danger_level": 1,
+    "has_market": false,
+    "has_refuel": false,
+    "has_repair": false
+  },
+  "asteroid_field_beta_close": {
+    "id": "asteroid_field_beta_close",
+    "name": "Beta Fringe Cluster",
+    "type": "mining_zone",
+    "description": "Compact asteroid cluster at the station perimeter for quick scout sorties.",
+    "coordinates": { "x": -16, "y": 14 },
+    "resources": ["nickel", "silicate"],
+    "richness": 0.22,
+    "danger_level": 1,
+    "has_market": false,
+    "has_refuel": false,
+    "has_repair": false
+  },
   "asteroid_belt_b": {
     "id": "asteroid_belt_b",
     "name": "Kessler Belt — Sector B",

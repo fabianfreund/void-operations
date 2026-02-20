@@ -42,6 +42,8 @@ class SocketManager extends EventEmitter {
     // Physics / async events pushed by the server
     this.socket.on('drone:arrived', (data) => this.emit('drone:arrived', data));
     this.socket.on('drone:mined', (data) => this.emit('drone:mined', data));
+    this.socket.on('drone:offline', (data) => this.emit('drone:offline', data));
+    this.socket.on('drone:emergency', (data) => this.emit('drone:emergency', data));
     this.socket.on('error', (data) => this.emit('server:error', data));
   }
 
@@ -87,6 +89,14 @@ class SocketManager extends EventEmitter {
     return this._request('cmd:refuel', { droneId, litres }, 'cmd:ok', 'cmd:error');
   }
 
+  stopInPlace(droneId) {
+    return this._request('cmd:stop', { droneId }, 'cmd:ok', 'cmd:error');
+  }
+
+  renameDrone(droneId, name) {
+    return this._request('cmd:rename', { droneId, name }, 'cmd:ok', 'cmd:error');
+  }
+
   // ── Administration ─────────────────────────────────────────────────────
 
   setOrganization(name) {
@@ -99,6 +109,10 @@ class SocketManager extends EventEmitter {
 
   listPlayers() {
     return this._request('players:list', null, 'players:list');
+  }
+
+  resetPlayer(playerId) {
+    return this._request('players:reset', { playerId }, 'players:reset', 'players:error');
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────

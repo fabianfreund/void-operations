@@ -19,12 +19,43 @@ const { log } = require('../ui/console');
 // ─── Geometry helpers ────────────────────────────────────────────────────────
 
 function distance(locA, locB) {
-  const a = world[locA];
-  const b = world[locB];
+  const a = locationCoords(locA);
+  const b = locationCoords(locB);
   if (!a || !b) throw new Error(`Unknown location: ${locA} or ${locB}`);
-  const dx = a.coordinates.x - b.coordinates.x;
-  const dy = a.coordinates.y - b.coordinates.y;
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function distanceCoords(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function locationCoords(locationId) {
+  const loc = world[locationId];
+  if (!loc?.coordinates) return null;
+  return { x: loc.coordinates.x, y: loc.coordinates.y };
+}
+
+function hasNumericCoords(obj) {
+  return Number.isFinite(obj?.x) && Number.isFinite(obj?.y);
+}
+
+function droneCoords(drone) {
+  if (Number.isFinite(drone?.coord_x) && Number.isFinite(drone?.coord_y)) {
+    return { x: drone.coord_x, y: drone.coord_y };
+  }
+  return locationCoords(drone?.location_id) ?? { x: 0, y: 0 };
+}
+
+function positionAlong(from, to, ratio) {
+  const t = Math.min(1, Math.max(0, ratio));
+  return {
+    x: from.x + (to.x - from.x) * t,
+    y: from.y + (to.y - from.y) * t,
+  };
 }
 
 /**
@@ -35,10 +66,17 @@ function distance(locA, locB) {
  * @returns {{ distanceKm: number, durationMs: number, fuelCost: number }}
  */
 function travelParams(fromId, toId, typeId) {
+  const from = locationCoords(fromId);
+  const to = locationCoords(toId);
+  if (!from || !to) throw new Error(`Unknown location: ${fromId} or ${toId}`);
+  return travelParamsFromCoords(from, to, typeId);
+}
+
+function travelParamsFromCoords(from, to, typeId) {
   const spec = droneSpecs[typeId];
   if (!spec) throw new Error(`Unknown drone type: ${typeId}`);
 
-  const distanceKm = distance(fromId, toId);
+  const distanceKm = distanceCoords(from, to);
   const durationMs = Math.ceil((distanceKm / spec.speed_kmh) * 3600 * 1000);
   const fuelCost = distanceKm * spec.fuel_burn_rate_l_per_km;
 
@@ -65,37 +103,62 @@ function tick(io) {
     const spec = DroneModel.spec(drone.type_id);
 
     if (drone.status === 'travelling') {
-      const { durationMs } = travelParams(drone.location_id, drone.destination_id, drone.type_id);
+      const destination = locationCoords(drone.destination_id);
+      if (!destination) continue;
+      const origin = hasNumericCoords({ x: drone.task_origin_x, y: drone.task_origin_y })
+        ? { x: drone.task_origin_x, y: drone.task_origin_y }
+        : droneCoords(drone);
+      const { durationMs } = travelParamsFromCoords(origin, destination, drone.type_id);
       const fullEtaSec = drone.task_started_at + Math.floor(durationMs / 1000);
 
-      // Arrived at destination
+      // Ran out of fuel before arrival, now running emergency battery.
       if (drone.task_eta_at < fullEtaSec) {
+        const emergencySec = DroneModel.spec(drone.type_id)?.battery_capacity_sec ?? 0;
+        const startedAt = nowSec;
+        const emergencyEta = startedAt + emergencySec;
+        const travelTotalSec = Math.max(1, fullEtaSec - drone.task_started_at);
+        const runoutRatio = (drone.task_eta_at - drone.task_started_at) / travelTotalSec;
+        const runoutPos = positionAlong(origin, destination, runoutRatio);
+
         DroneModel.updateStatus(drone.id, {
-          status: 'offline',
+          status: 'emergency',
+          location_id: 'deep_space',
           destination_id: drone.destination_id,
-          task_started_at: null,
-          task_eta_at: null,
+          coord_x: parseFloat(runoutPos.x.toFixed(3)),
+          coord_y: parseFloat(runoutPos.y.toFixed(3)),
+          task_started_at: startedAt,
+          task_eta_at: emergencyEta,
+          task_origin_x: null,
+          task_origin_y: null,
+          battery_remaining_sec: emergencySec,
         });
 
-        logEvent.run('drone_offline', JSON.stringify({
+        logEvent.run('drone_emergency', JSON.stringify({
           drone_id: drone.id,
           location: drone.location_id,
           destination: drone.destination_id,
+          battery_sec: emergencySec,
         }));
 
-        pushToOwner(io, drone.owner_id, 'drone:offline', {
+        pushToOwner(io, drone.owner_id, 'drone:emergency', {
           droneId: drone.id,
           droneName: drone.name,
           location: drone.location_id,
           destination: drone.destination_id,
+          batterySec: emergencySec,
         });
       } else {
         DroneModel.updateStatus(drone.id, {
           status: 'idle',
           location_id: drone.destination_id,
+          coord_x: destination.x,
+          coord_y: destination.y,
           destination_id: null,
           task_started_at: null,
           task_eta_at: null,
+          task_origin_x: null,
+          task_origin_y: null,
+          battery_remaining_sec: null,
         });
 
         logEvent.run('drone_arrived', JSON.stringify({
@@ -127,6 +190,7 @@ function tick(io) {
           status: 'idle',
           task_started_at: null,
           task_eta_at: null,
+          battery_remaining_sec: null,
         });
 
         logEvent.run('drone_mined', JSON.stringify({
@@ -143,6 +207,30 @@ function tick(io) {
         });
       }
     }
+
+    if (drone.status === 'emergency') {
+      DroneModel.updateStatus(drone.id, {
+        status: 'offline',
+        task_started_at: null,
+        task_eta_at: null,
+        task_origin_x: null,
+        task_origin_y: null,
+        battery_remaining_sec: 0,
+      });
+
+      logEvent.run('drone_offline', JSON.stringify({
+        drone_id: drone.id,
+        location: drone.location_id,
+        destination: drone.destination_id,
+      }));
+
+      pushToOwner(io, drone.owner_id, 'drone:offline', {
+        droneId: drone.id,
+        droneName: drone.name,
+        location: drone.location_id,
+        destination: drone.destination_id,
+      });
+    }
   }
 }
 
@@ -156,29 +244,38 @@ function dispatchTravel(droneId, destinationId) {
   const drone = DroneModel.findById(droneId);
   if (!drone) return 'Drone not found.';
   if (drone.status !== 'idle') return `Drone is ${drone.status} — cannot dispatch.`;
-  if (!world[destinationId]) return `Unknown destination: ${destinationId}`;
-  if (drone.location_id === destinationId) return 'Drone is already at that location.';
+  const destination = locationCoords(destinationId);
+  if (!destination) return `Unknown destination: ${destinationId}`;
 
-  const { durationMs, fuelCost } = travelParams(drone.location_id, destinationId, drone.type_id);
+  const from = droneCoords(drone);
+  if (drone.location_id === destinationId && distanceCoords(from, destination) < 0.001) {
+    return 'Drone is already at that location.';
+  }
+
+  const { durationMs, fuelCost } = travelParamsFromCoords(from, destination, drone.type_id);
 
   const nowMs = Date.now();
-  const fullEtaSec = Math.floor((nowMs + durationMs) / 1000);
+  const startedAtSec = Math.floor(nowMs / 1000);
+  const fullEtaSec = Math.max(startedAtSec + 1, Math.floor((nowMs + durationMs) / 1000));
 
   let etaSec = fullEtaSec;
   let newFuel = drone.fuel_current_l - fuelCost;
   if (newFuel < 0) {
     const fuelRatio = Math.max(0, drone.fuel_current_l / fuelCost);
     const runoutMs = Math.floor(durationMs * fuelRatio);
-    etaSec = Math.floor((nowMs + runoutMs) / 1000);
+    etaSec = Math.max(startedAtSec + 1, Math.floor((nowMs + runoutMs) / 1000));
     newFuel = 0;
   }
 
   DroneModel.updateStatus(droneId, {
     status: 'travelling',
     destination_id: destinationId,
-    task_started_at: Math.floor(nowMs / 1000),
+    task_started_at: startedAtSec,
     task_eta_at: etaSec,
+    task_origin_x: parseFloat(from.x.toFixed(3)),
+    task_origin_y: parseFloat(from.y.toFixed(3)),
     fuel_current_l: parseFloat(newFuel.toFixed(3)),
+    battery_remaining_sec: null,
   });
 
   return null; // success
@@ -205,6 +302,49 @@ function dispatchMine(droneId) {
     status: 'mining',
     task_started_at: Math.floor(nowMs / 1000),
     task_eta_at: Math.floor((nowMs + cycleDurationMs) / 1000),
+    battery_remaining_sec: null,
+  });
+
+  return null;
+}
+
+/**
+ * Abort active travel/emergency and keep the drone at its current location.
+ * Returns an error string on failure, or null on success.
+ */
+function stopInPlace(droneId) {
+  const drone = DroneModel.findById(droneId);
+  if (!drone) return 'Drone not found.';
+  if (drone.status !== 'travelling' && drone.status !== 'emergency') {
+    return `Drone is ${drone.status} — cannot stop in place.`;
+  }
+
+  let pos = droneCoords(drone);
+  if (drone.status === 'travelling') {
+    const destination = locationCoords(drone.destination_id);
+    const origin = hasNumericCoords({ x: drone.task_origin_x, y: drone.task_origin_y })
+      ? { x: drone.task_origin_x, y: drone.task_origin_y }
+      : droneCoords(drone);
+    if (destination && drone.task_started_at && drone.task_eta_at) {
+      const { durationMs } = travelParamsFromCoords(origin, destination, drone.type_id);
+      const fullTravelSec = Math.max(1, Math.floor(durationMs / 1000));
+      const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000) - drone.task_started_at);
+      const ratio = elapsedSec / fullTravelSec;
+      pos = positionAlong(origin, destination, ratio);
+    }
+  }
+
+  DroneModel.updateStatus(droneId, {
+    status: 'idle',
+    location_id: 'deep_space',
+    coord_x: parseFloat(pos.x.toFixed(3)),
+    coord_y: parseFloat(pos.y.toFixed(3)),
+    destination_id: null,
+    task_started_at: null,
+    task_eta_at: null,
+    task_origin_x: null,
+    task_origin_y: null,
+    battery_remaining_sec: null,
   });
 
   return null;
@@ -213,16 +353,32 @@ function dispatchMine(droneId) {
 // ─── Startup ──────────────────────────────────────────────────────────────────
 
 let tickInterval = null;
+let tickIntervalMs = economy.physics_tick_interval_ms ?? 10_000;
+
+function scheduleTick(io) {
+  if (tickInterval) clearInterval(tickInterval);
+  tickInterval = setInterval(() => tick(io), tickIntervalMs);
+}
 
 function start(io) {
-  const intervalMs = economy.physics_tick_interval_ms ?? 10_000;
-  log('physics', `Tick engine started — interval ${intervalMs / 1000}s`);
-  tickInterval = setInterval(() => tick(io), intervalMs);
+  log('physics', `Tick engine started — interval ${tickIntervalMs / 1000}s`);
+  scheduleTick(io);
   tick(io); // run immediately on startup to resolve any past ETAs
 }
 
 function stop() {
   if (tickInterval) clearInterval(tickInterval);
+  tickInterval = null;
+}
+
+function getTickIntervalMs() {
+  return tickIntervalMs;
+}
+
+function setTickIntervalMs(io, intervalMs) {
+  tickIntervalMs = intervalMs;
+  if (tickInterval) scheduleTick(io);
+  return tickIntervalMs;
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -232,4 +388,15 @@ function pushToOwner(io, ownerId, event, data) {
   io.to(`user:${ownerId}`).emit(event, data);
 }
 
-module.exports = { travelParams, distance, dispatchTravel, dispatchMine, start, stop, tick };
+module.exports = {
+  travelParams,
+  distance,
+  dispatchTravel,
+  dispatchMine,
+  stopInPlace,
+  start,
+  stop,
+  tick,
+  getTickIntervalMs,
+  setTickIntervalMs,
+};

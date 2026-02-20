@@ -7,6 +7,7 @@
     "cargo_capacity_kg": 5,
     "fuel_tank_l": 20,
     "fuel_burn_rate_l_per_km": 0.15,
+    "battery_capacity_sec": 300,
     "speed_kmh": 120,
     "mining_power": 0,
     "base_cost": 500
@@ -19,6 +20,7 @@
     "cargo_capacity_kg": 80,
     "fuel_tank_l": 60,
     "fuel_burn_rate_l_per_km": 0.55,
+    "battery_capacity_sec": 540,
     "speed_kmh": 40,
     "mining_power": 10,
     "base_cost": 2000
@@ -31,6 +33,7 @@
     "cargo_capacity_kg": 150,
     "fuel_tank_l": 100,
     "fuel_burn_rate_l_per_km": 0.8,
+    "battery_capacity_sec": 720,
     "speed_kmh": 35,
     "mining_power": 25,
     "base_cost": 6500
@@ -43,6 +46,7 @@
     "cargo_capacity_kg": 500,
     "fuel_tank_l": 150,
     "fuel_burn_rate_l_per_km": 1.4,
+    "battery_capacity_sec": 960,
     "speed_kmh": 20,
     "mining_power": 0,
     "base_cost": 12000

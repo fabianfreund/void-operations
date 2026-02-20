@@ -57,6 +57,15 @@ async function main() {
     dash.stopProgressTracking();
   });
 
+  socket.on('drone:emergency', (data) => {
+    dash.addLog(
+      `Drone "${data.droneName}" entered emergency battery mode near ${data.location} (${data.batterySec}s remaining)`,
+      'yellow',
+      { droneId: data.droneId }
+    );
+    dash.stopProgressTracking();
+  });
+
   socket.on('server:error', (data) => {
     dash.addLog(`Server: ${data.message}`, 'red');
   });
@@ -70,6 +79,16 @@ async function main() {
   const user = await runAuthFlow();
   dash.addLog('Welcome back, commander.');
 
+  async function refreshFleetState(selectedDroneId = null) {
+    const drones = await socket.listFleet();
+    dash.setCachedDrones(drones);
+    if (!selectedDroneId) return { drones, drone: null };
+    return {
+      drones,
+      drone: drones.find((d) => d.id === selectedDroneId) ?? null,
+    };
+  }
+
   // ── Main Loop ─────────────────────────────────────────────────────────────
 
   while (true) {
@@ -82,7 +101,7 @@ async function main() {
     }
 
     if (choice === 'View Fleet') {
-      const drones = await socket.listFleet();
+      const { drones } = await refreshFleetState();
       dash.renderHeader(user);
       dash.renderFleetTable(drones);
 
@@ -90,13 +109,47 @@ async function main() {
       if (!drone) continue;
 
       while (true) {
+        const { drone: refreshedDrone } = await refreshFleetState(drone.id);
+        if (refreshedDrone) {
+          drone = refreshedDrone;
+        } else {
+          dash.addLog('Selected drone no longer available.', 'red');
+          break;
+        }
+
         const action = await dash.showDroneActionMenu(drone);
         if (action === '← Back') break;
+
+        if (action === 'Pin Drone' || action === 'Unpin Drone') {
+          const pinned = dash.togglePinnedDrone(drone.id);
+          dash.addLog(
+            `${pinned ? 'Pinned' : 'Unpinned'} "${drone.name}".`,
+            'white',
+            { droneId: drone.id }
+          );
+          continue;
+        }
 
         if (action === 'Status') {
           const detail = await socket.getDrone(drone.id);
           dash.renderDroneDetail(detail);
           await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+        }
+
+        if (action === 'Rename Drone') {
+          const name = await dash.promptDroneName(drone.name, drone.id);
+          if (!name) continue;
+          try {
+            const result = await socket.renameDrone(drone.id, name);
+            drone = result.drone;
+            dash.addLog(`Drone renamed to "${drone.name}".`, 'green', { droneId: drone.id });
+            dash.renderCommandResult('Rename Drone', [`New name: ${drone.name}`], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          } catch (err) {
+            dash.addLog(`Rename failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Rename Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
         }
 
         if (action === 'Commands') {
@@ -153,6 +206,44 @@ async function main() {
           }
         }
 
+        if (cmd === 'Stop In Place') {
+          try {
+            const result = await socket.stopInPlace(drone.id);
+            const updated = result.drone;
+            dash.stopProgressTracking();
+            dash.addLog(`${updated.name} stopped in place at ${updated.location_id}`, 'yellow', {
+              droneId: drone.id,
+            });
+            dash.renderCommandResult('Stop In Place', [
+              `Travel aborted. Drone is now ${updated.status.toUpperCase()}.`,
+              `Location: ${updated.location_id}`,
+              `Coordinates: (${updated.coord_x?.toFixed?.(1) ?? '?'}, ${updated.coord_y?.toFixed?.(1) ?? '?'})`,
+            ], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            drone = updated;
+          } catch (err) {
+            dash.addLog(`Stop failed: ${err.message}`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Stop Failed', [err.message], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          }
+        }
+
+        if (cmd === 'Scan/Comms') {
+          if (drone.status !== 'idle' && drone.status !== 'emergency') {
+            dash.addLog(`Scan failed: Drone must be idle or emergency to scan.`, 'red', { droneId: drone.id });
+            dash.renderCommandResult('Scan Failed', ['Drone must be idle or emergency to scan.'], drone.id);
+            await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+          } else {
+            try {
+              const result = await socket.scanNearby(drone.id);
+              await dash.runScanWorkflow(result, drone.id);
+            } catch (err) {
+              dash.addLog(`Scan failed: ${err.message}`, 'red', { droneId: drone.id });
+              await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
+            }
+          }
+        }
+
         if (cmd === 'Sell Cargo') {
           try {
             const result = await socket.sell(drone.id);
@@ -202,15 +293,6 @@ async function main() {
           }
         }
 
-        if (action === 'Scan') {
-          try {
-            const result = await socket.scanNearby(drone.id);
-            dash.renderScanResults(result, drone.id);
-          } catch (err) {
-            dash.addLog(`Scan failed: ${err.message}`, 'red', { droneId: drone.id });
-          }
-          await term.singleColumnMenu(['← Back'], { leftPadding: '  ' }).promise;
-        }
       }
     }
 
@@ -245,13 +327,36 @@ async function main() {
           await dash.waitForBack();
         }
 
+        if (action === 'Reset Player') {
+          const players = await socket.listPlayers();
+          const selected = await dash.showPlayerResetMenu(players);
+          if (!selected) continue;
+          try {
+            const result = await socket.resetPlayer(selected.id);
+            dash.addLog(`Player reset: ${result.player.username}`, 'yellow');
+            if (result.player.id === user.id) Object.assign(user, result.player);
+          } catch (err) {
+            dash.addLog(`Reset failed: ${err.message}`, 'red');
+          }
+        }
+
         if (action === 'Settings') {
           while (true) {
             const selected = await dash.showSettingsMenu();
-            if (selected === 1) break;
+            if (selected === 3) break; // ← Back
             if (selected === 0) {
               dash.toggleLogSidebar();
               dash.renderHeader(user);
+            }
+            if (selected === 1) {
+              const mode = await dash.showInfoPanelMenu();
+              if (mode === 0) dash.setInfoPanelMode('off');
+              else if (mode === 1) dash.setInfoPanelMode('fleet');
+              else if (mode === 2) dash.setInfoPanelMode('pinned');
+              dash.renderHeader(user);
+            }
+            if (selected === 2) {
+              await dash.showPinnedFieldsMenu();
             }
           }
         }
@@ -260,8 +365,9 @@ async function main() {
 
     if (choice === 'Status') {
       const drones = await socket.listFleet();
+      dash.setCachedDrones(drones);
       dash.renderHeader(user);
-      dash.renderOverallStatus(user, drones);
+      await dash.renderOverallStatus(user, drones);
       await dash.waitForBack();
     }
   }

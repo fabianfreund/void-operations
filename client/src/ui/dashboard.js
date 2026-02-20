@@ -28,6 +28,15 @@ module.exports = {
   waitForBack: layout.waitForBack,
   toggleLogSidebar: layout.toggleLogSidebar,
   isLogSidebarEnabled: layout.isLogSidebarEnabled,
+  // info panel
+  setCachedDrones: layout.setCachedDrones,
+  setInfoPanelMode: layout.setInfoPanelMode,
+  setPinnedFields: layout.setPinnedFields,
+  togglePinnedDrone: layout.togglePinnedDrone,
+  isPinned: layout.isPinned,
+  getInfoPanelMode: layout.getInfoPanelMode,
+  getPinnedFields: layout.getPinnedFields,
+  renderInfoPanel: layout.renderInfoPanel,
 
   // main menu
   showMainMenu: mainMenu.showMainMenu,
@@ -37,17 +46,20 @@ module.exports = {
   showDroneSelector: fleet.showDroneSelector,
   showLocationSelector: fleet.showLocationSelector,
   renderScanResults: fleet.renderScanResults,
+  runScanWorkflow: fleet.runScanWorkflow,
   renderCommandResult: fleet.renderCommandResult,
 
   // drone pages
   showDroneActionMenu: drone.showDroneActionMenu,
   showDroneCommandMenu: drone.showDroneCommandMenu,
   renderDroneDetail: drone.renderDroneDetail,
+  promptDroneName: drone.promptDroneName,
 
   // admin pages
   showAdminMenu: admin.showAdminMenu,
   renderOrganizations: admin.renderOrganizations,
   renderPlayers: admin.renderPlayers,
+  showPlayerResetMenu: admin.showPlayerResetMenu,
   promptOrganizationName: admin.promptOrganizationName,
 
   // status page
@@ -55,4 +67,6 @@ module.exports = {
 
   // settings
   showSettingsMenu: settings.showSettingsMenu,
+  showInfoPanelMenu: settings.showInfoPanelMenu,
+  showPinnedFieldsMenu: settings.showPinnedFieldsMenu,
 };

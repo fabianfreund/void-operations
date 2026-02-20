@@ -45,6 +45,18 @@ const world = {
     type: 'mining_zone',
     coordinates: { x: -90, y: 30 },
   },
+  asteroid_field_alpha_close: {
+    id: 'asteroid_field_alpha_close',
+    name: 'Alpha Close Drifts',
+    type: 'mining_zone',
+    coordinates: { x: 12, y: -8 },
+  },
+  asteroid_field_beta_close: {
+    id: 'asteroid_field_beta_close',
+    name: 'Beta Fringe Cluster',
+    type: 'mining_zone',
+    coordinates: { x: -16, y: 14 },
+  },
   asteroid_belt_b: {
     id: 'asteroid_belt_b',
     name: 'Kessler Belt — Sector B',

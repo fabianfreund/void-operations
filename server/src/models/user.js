@@ -59,7 +59,7 @@ const UserModel = {
 
   listPlayers() {
     return db.prepare(`
-      SELECT username, org_name, last_seen
+      SELECT id, username, org_name, credits, last_seen
       FROM users
       ORDER BY username
     `).all();
