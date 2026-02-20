@@ -10,6 +10,7 @@ WORKDIR /app
 
 ARG VOID_SERVER_URL=
 ENV VOID_SERVER_URL=${VOID_SERVER_URL}
+ENV PORT=80
 
 # Copy package manifests for cache-friendly installs
 COPY server/package*.json ./server/
@@ -28,9 +29,9 @@ RUN node scripts/build-client-tarball.js
 # Persistent data directory (mounted as a volume in docker-compose)
 RUN mkdir -p /app/server/db
 
-EXPOSE 3000
+EXPOSE 80
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s \
-  CMD sh -c 'wget -qO- "http://localhost:${PORT:-3000}/health" || exit 1'
+  CMD sh -c 'wget -qO- "http://localhost:${PORT:-80}/health" || exit 1'
 
 CMD ["node", "server/index.js"]
