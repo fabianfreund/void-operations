@@ -126,6 +126,9 @@ This writes `~/.void-ops/client.json` with the correct server URL and installs t
 void-term
 ```
 
+On startup, `void-term` checks `/client/version` and auto-updates itself from the server tarball when a newer client is available.
+Set `VOID_TERM_AUTO_UPDATE=0` to disable auto-update.
+
 If you're running the server outside Docker, generate the tarball first:
 
 ```bash

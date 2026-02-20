@@ -12,10 +12,14 @@ const { runAuthFlow } = require('./ui/auth');
 const dash = require('./ui/dashboard');
 const world = require('./world'); // local copy of world config
 const { getServerUrl } = require('./config');
+const { autoUpdateIfNeeded } = require('./updater');
+const { version: CLIENT_VERSION } = require('../package.json');
 
 const SERVER_URL = getServerUrl();
 
 async function main() {
+  await autoUpdateIfNeeded(CLIENT_VERSION);
+
   term.fullscreen(true);
   term.grabInput();
 

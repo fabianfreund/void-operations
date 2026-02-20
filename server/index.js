@@ -13,6 +13,7 @@ require('./db/init');
 
 const PORT = process.env.PORT ?? 3000;
 const CLIENT_TARBALL = path.join(__dirname, 'client-dist', 'void-term.tgz');
+const CLIENT_PACKAGE_JSON = path.join(__dirname, '..', 'client', 'package.json');
 const SHUTDOWN_FORCE_EXIT_MS = Number(process.env.SHUTDOWN_FORCE_EXIT_MS ?? 10000);
 const RECENT_REQUESTS_LIMIT = Number(process.env.RECENT_REQUESTS_LIMIT ?? 20);
 
@@ -32,6 +33,15 @@ function formatUptime(totalSec) {
   const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
   const ss = String(sec % 60).padStart(2, '0');
   return `${hh}:${mm}:${ss}`;
+}
+
+function getBundledClientVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(CLIENT_PACKAGE_JSON, 'utf8'));
+    return pkg?.version || null;
+  } catch {
+    return null;
+  }
 }
 
 function countByName(items) {
@@ -122,6 +132,20 @@ const httpServer = http.createServer((req, res) => {
     });
     fs.createReadStream(CLIENT_TARBALL).pipe(res);
     res.on('finish', () => logRequest(req, 200));
+    return;
+  }
+
+  if (routePath === '/client/version') {
+    const version = getBundledClientVersion();
+    if (!version) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'client version unavailable' }));
+      logRequest(req, 503);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ name: 'void-term', version }));
+    logRequest(req, 200);
     return;
   }
 

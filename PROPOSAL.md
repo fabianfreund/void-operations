@@ -33,55 +33,226 @@ All new mechanics will be **config-driven** (no magic numbers in code), **file-s
 
 ### 3.1 Ship Modules
 
-Drones can be fitted with modules at stations that have a **shipyard** service. Modules modify base stats multiplicatively or additively. Each drone type has a fixed number of slots per category.
+Modules are the **primary source of a drone's functional stats**. The drone chassis only defines hull capacity, base mass, and which module families it accepts. All speed, fuel capacity, cargo, mining power, scan radius etc. come entirely from installed modules.
 
-**Module categories:**
-| Category | Effect examples |
-|---|---|
-| `engine` | +speed%, -burn rate |
-| `cargo` | +cargo capacity kg |
-| `mining` | +mining power, +yield multiplier |
-| `hull` | +max hull points, -damage taken % |
-| `sensor` | +scan radius, reveal hidden locations |
+#### Module Families & Upgrade Chains
 
-**Config:** `server/config/modules.json` — one entry per module type:
+Every module belongs to a **family** (e.g. `thruster`, `fuel_tank`, `comms`). Within a family, modules form a linear upgrade chain: Mk1 → Mk2 → Mk3. You upgrade in-place — you cannot skip tiers, you cannot install a second thruster. Each slot holds exactly one module of that family.
+
+**Families and what they provide:**
+
+| Family | Stat(s) provided | Example chain |
+|---|---|---|
+| `thruster` | `speed_kmh`, `fuel_burn_l_per_km` | Thruster Mk1 → Mk2 → Mk3 |
+| `fuel_tank` | `fuel_tank_l` | Basic Tank → Extended Tank → Deep Reserve |
+| `comms` | `scan_radius_km`, `comms_range_km` | Comms Mk1 → Relay Array → Quantum Link |
+| `mining_laser` | `mining_power`, `yield_multiplier` | Mining Laser Mk1 → Mk2 → Mk3 |
+| `cargo_hold` | `cargo_kg` | Standard Hold → Extended Hold → Bulk Freighter Hold |
+| `hull_plating` | `hull_max`, `damage_reduction_pct` | Basic Plating → Reinforced → Composite Armor |
+| `sensor_array` | `scan_radius_km`, `reveal_hidden` | Passive Sensor → Active Sensor → Long-Range Array |
+
+#### Drone Chassis — What Changes
+
+`drones.json` no longer has speed/fuel/cargo/mining stats. It becomes chassis-only:
+
 ```jsonc
 {
-  "engine_mk1": {
-    "name": "Thruster Mk1",
-    "category": "engine",
-    "mass_kg": 4,
-    "cost": 800,
-    "effects": { "speed_multiplier": 1.15 }
+  "scout": {
+    "name": "Scout",
+    "description": "Fast and light. No mining capability.",
+    "chassis_mass_kg": 6,
+    "hull_base": 60,
+    "cost": 500,
+    "allowed_families": ["thruster", "fuel_tank", "comms", "sensor_array", "hull_plating"],
+    "default_modules": ["thruster_mk1", "fuel_tank_mk1", "comms_mk1"]
   },
-  "cargo_ext_mk1": {
-    "name": "Cargo Extender Mk1",
-    "category": "cargo",
-    "mass_kg": 8,
-    "cost": 1200,
-    "effects": { "cargo_kg_bonus": 40 }
+  "miner_mk1": {
+    "name": "Miner Mk1",
+    "description": "Workhorse miner. Slow but profitable.",
+    "chassis_mass_kg": 20,
+    "hull_base": 100,
+    "cost": 2000,
+    "allowed_families": ["thruster", "fuel_tank", "comms", "mining_laser", "cargo_hold", "hull_plating"],
+    "default_modules": ["thruster_mk1", "fuel_tank_mk1", "comms_mk1", "mining_laser_mk1", "cargo_hold_mk1"]
+  },
+  "hauler": {
+    "name": "Hauler",
+    "description": "Maximum cargo. Terrible everywhere else.",
+    "chassis_mass_kg": 80,
+    "hull_base": 180,
+    "cost": 12000,
+    "allowed_families": ["thruster", "fuel_tank", "comms", "cargo_hold", "hull_plating"],
+    "default_modules": ["thruster_mk1", "fuel_tank_mk1", "comms_mk1", "cargo_hold_mk1"]
   }
-  // ...
 }
 ```
 
-**Config:** `server/config/drones.json` — add `module_slots` per type:
+Key rules:
+- Scout **cannot** install `mining_laser` or `cargo_hold` — it's a scout, not a miner.
+- Hauler **cannot** install `sensor_array` or `mining_laser`.
+- Installing a family that isn't in `allowed_families` is rejected by the server.
+
+#### Module Config (`server/config/modules.json`)
+
+Each entry is one tier in a family's upgrade chain:
+
 ```jsonc
 {
-  "miner_mk2": {
-    "module_slots": { "engine": 1, "cargo": 2, "mining": 1, "hull": 1, "sensor": 0 }
+  "thruster_mk1": {
+    "family": "thruster",
+    "tier": 1,
+    "name": "Thruster Mk1",
+    "description": "Standard ion drive. Gets you there, eventually.",
+    "mass_kg": 4,
+    "cost": 0,
+    "upgrades_to": "thruster_mk2",
+    "stats": {
+      "speed_kmh": 60,
+      "fuel_burn_l_per_km": 0.20
+    }
+  },
+  "thruster_mk2": {
+    "family": "thruster",
+    "tier": 2,
+    "name": "Thruster Mk2",
+    "description": "Boosted ion drive with efficiency coils.",
+    "mass_kg": 5,
+    "cost": 1800,
+    "upgrades_to": "thruster_mk3",
+    "stats": {
+      "speed_kmh": 90,
+      "fuel_burn_l_per_km": 0.16
+    }
+  },
+  "thruster_mk3": {
+    "family": "thruster",
+    "tier": 3,
+    "name": "Thruster Mk3",
+    "description": "Military-grade plasma drive.",
+    "mass_kg": 7,
+    "cost": 6500,
+    "stats": {
+      "speed_kmh": 140,
+      "fuel_burn_l_per_km": 0.11
+    }
+  },
+  "fuel_tank_mk1": {
+    "family": "fuel_tank",
+    "tier": 1,
+    "name": "Basic Fuel Tank",
+    "description": "Standard pressurised hydrogen cell.",
+    "mass_kg": 3,
+    "cost": 0,
+    "upgrades_to": "fuel_tank_mk2",
+    "stats": { "fuel_tank_l": 20 }
+  },
+  "fuel_tank_mk2": {
+    "family": "fuel_tank",
+    "tier": 2,
+    "name": "Extended Tank",
+    "mass_kg": 6,
+    "cost": 900,
+    "upgrades_to": "fuel_tank_mk3",
+    "stats": { "fuel_tank_l": 40 }
+  },
+  "comms_mk1": {
+    "family": "comms",
+    "tier": 1,
+    "name": "Comms Array Mk1",
+    "description": "Basic radio link. Short range.",
+    "mass_kg": 2,
+    "cost": 0,
+    "upgrades_to": "comms_mk2",
+    "stats": {
+      "scan_radius_km": 250,
+      "comms_range_km": 500
+    }
+  },
+  "mining_laser_mk1": {
+    "family": "mining_laser",
+    "tier": 1,
+    "name": "Mining Laser Mk1",
+    "description": "Entry-level extraction laser.",
+    "mass_kg": 12,
+    "cost": 0,
+    "upgrades_to": "mining_laser_mk2",
+    "stats": {
+      "mining_power": 8,
+      "yield_multiplier": 1.0
+    }
+  },
+  "cargo_hold_mk1": {
+    "family": "cargo_hold",
+    "tier": 1,
+    "name": "Standard Cargo Hold",
+    "mass_kg": 10,
+    "cost": 0,
+    "upgrades_to": "cargo_hold_mk2",
+    "stats": { "cargo_kg": 60 }
   }
+  // ... all other tiers follow the same pattern
 }
 ```
 
-**DB:** `drone_modules(id, drone_id, module_type_id, slot_index, installed_at)`
+> **Default modules have cost 0** — they come with the drone at purchase. Upgrades cost credits and are only available at stations that sell that module tier (see `stations.json`).
 
-**New system:** `server/src/systems/modules.js`
-- `installModule(droneId, moduleTypeId)` — validates slot availability, deducts credits, inserts row
-- `removeModule(droneId, moduleId)` — removes row, refunds 50% cost
-- `getEffectiveStats(droneId)` — base spec + summed module effects → used everywhere speed/cargo/mining is needed
+#### Upgrade Flow
 
-**Physics integration:** `physics.js` calls `getEffectiveStats()` instead of raw spec — so fitted modules change travel time, fuel burn, and mining yield automatically.
+1. View drone detail → see all installed modules and their current tier stats.
+2. At a station with `shipyard` service → open **Drone Workshop** → see which families can be upgraded + upgrade cost.
+3. Pay credits → old module row replaced by new tier row. Mass on the drone updates automatically.
+4. Can only upgrade one tier at a time (Mk1 → Mk2, not Mk1 → Mk3).
+
+There is **no removal/sell-back** for default modules (thruster, tank, comms). Optional modules (hull_plating, sensor_array) can be removed for 0 credits (no refund) at a shipyard — making room for a different family if desired.
+
+#### DB
+
+```sql
+drone_modules (
+  id             TEXT PRIMARY KEY,
+  drone_id       TEXT NOT NULL REFERENCES drones(id) ON DELETE CASCADE,
+  family         TEXT NOT NULL,        -- e.g. 'thruster'
+  module_type_id TEXT NOT NULL,        -- e.g. 'thruster_mk2'
+  installed_at   INTEGER DEFAULT unixepoch(),
+  UNIQUE(drone_id, family)             -- one module per family per drone
+)
+```
+
+#### `getEffectiveStats(droneId)` — central function in `modules.js`
+
+Reads all installed module rows, sums their `stats` fields, adds `chassis_mass_kg`. Returns:
+
+```js
+{
+  speed_kmh: 90,
+  fuel_burn_l_per_km: 0.16,
+  fuel_tank_l: 40,
+  cargo_kg: 60,
+  mining_power: 8,
+  yield_multiplier: 1.0,
+  scan_radius_km: 250,
+  hull_max: 160,         // hull_base + hull_plating.hull_max (if installed)
+  damage_reduction_pct: 0,
+  total_mass_kg: 47      // chassis_mass + sum(module.mass_kg)
+}
+```
+
+Physics, mining, refuel, and repair all call `getEffectiveStats()` — never the raw chassis spec.
+
+#### Module Stats in Every Menu
+
+Wherever a drone is shown (fleet table, drone detail, status page, scan results), the installed modules and their individual stats are included in the `enrichDrone()` response. The client can show a **MODULES** section in drone detail:
+
+```
+MODULES
+  Thruster Mk2       speed: 90 km/h   burn: 0.16 L/km
+  Basic Fuel Tank    capacity: 20 L
+  Comms Array Mk1    scan: 250 km
+  Mining Laser Mk2   power: 20   yield: ×1.3
+  Standard Hold      cargo: 60 kg
+```
+
+Each module line shows all its stats inline.
 
 ---
 
@@ -409,8 +580,8 @@ Computed by `ai-context.js` from event_log + drone_stats, not in the hot path.
 
 ```
 server/config/
-├── drones.json          existing — add module_slots, hull_max
-├── world.json           existing — add danger_level, damage ranges, richness stays
+├── drones.json          existing — REPLACED: remove static stats, becomes chassis-only (mass, hull_base, allowed_families, default_modules)
+├── world.json           existing — add danger_level, damage ranges per zone; richness stays
 ├── economy.json         existing — add supply/demand params
 ├── modules.json         NEW — all module type definitions
 ├── stations.json        NEW — per-station services, shop inventory, fuel stock
@@ -432,16 +603,17 @@ All additions via **lightweight migrations** (same pattern as existing `org_name
 
 ```sql
 -- Additions to drones table
+-- hull_max is computed from chassis hull_base + hull_plating module, but we cache it here for tick performance
 ALTER TABLE drones ADD COLUMN hull_current REAL DEFAULT 100;
-ALTER TABLE drones ADD COLUMN hull_max REAL DEFAULT 100;
 
 -- New tables
 CREATE TABLE IF NOT EXISTS drone_modules (
   id             TEXT PRIMARY KEY,
   drone_id       TEXT NOT NULL REFERENCES drones(id) ON DELETE CASCADE,
-  module_type_id TEXT NOT NULL,
-  slot_index     INTEGER NOT NULL,
-  installed_at   INTEGER DEFAULT unixepoch()
+  family         TEXT NOT NULL,        -- 'thruster' | 'fuel_tank' | 'comms' | etc.
+  module_type_id TEXT NOT NULL,        -- 'thruster_mk2' etc.
+  installed_at   INTEGER DEFAULT unixepoch(),
+  UNIQUE(drone_id, family)             -- one module per family per drone
 );
 
 CREATE TABLE IF NOT EXISTS drone_stats (
@@ -530,8 +702,8 @@ client/
 | `market:prices` | Get current prices at a station |
 | `shop:modules` | List modules available at station |
 | `shop:drones` | List drones available at station |
-| `cmd:buy_module` `{ droneId, moduleTypeId }` | Purchase + install module |
-| `cmd:remove_module` `{ droneId, moduleId }` | Uninstall module |
+| `cmd:upgrade_module` `{ droneId, family }` | Upgrade a module family one tier (e.g. thruster_mk1 → mk2) |
+| `cmd:remove_module` `{ droneId, family }` | Remove an optional module (not thruster/fuel_tank/comms) — free, no refund |
 | `cmd:buy_drone` `{ locationId, typeId, name }` | Purchase new drone |
 | `cmd:repair` `{ droneId, hullPoints? }` | Repair drone |
 | `contracts:list` `{ locationId? }` | Open + my active contracts |
@@ -618,10 +790,20 @@ client/
 
 ---
 
-## 10. Open Questions (decide before Phase 1)
+## 10. Decided
 
-1. **Module removal refund**: 50% cost refund, or zero? Zero is simpler, 50% is more interesting for experimentation.
-2. **Drone destruction**: Permanent loss, or recoverable for a large fee at a shipyard within N ticks?
-3. **Contract competition**: Can multiple players see and race for the same contract? (currently: first-claim wins)
-4. **Fuel station stock**: Should stations run low on fuel (tracked like market supply), or is fuel always available if the station has refuel service?
-5. **AI trigger**: AI runs on every physics tick, or on a slower timer, or only while at least one player is online?
+| Question | Decision |
+|---|---|
+| Default modules (thruster/tank/comms) removable? | **No** — core to drone function, cannot be removed |
+| Optional module removal refund | **Free removal, no refund** — makes experimentation low-risk |
+| Upgrade must be sequential? | **Yes** — Mk1 → Mk2 → Mk3 only, no skipping |
+| Drone chassis stats | **Chassis-only** — hull_base + allowed_families; all functional stats come from modules |
+| Module stats visible in all menus | **Yes** — enrichDrone() always includes modules + their stats |
+
+## 11. Open Questions (decide before Phase 1)
+
+1. **Drone destruction**: Permanent loss, or recoverable for a large fee at a shipyard within N ticks (e.g. 50 ticks = ~8 min)?
+2. **Contract competition**: Can multiple players see and race for the same contract (first-claim wins), or are contracts player-specific?
+3. **Fuel station stock**: Stations run low on fuel (tracked supply), or is fuel unlimited if station has refuel service?
+4. **AI trigger**: Runs on every physics tick, on a slower independent timer, or only while ≥ 1 player is online?
+5. **Drone purchase location**: New drone spawns at the purchasing station (idle there), or teleports to hub?
