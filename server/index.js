@@ -108,12 +108,34 @@ Physics.start(io);
 httpServer.listen(PORT, () => {
   // Start the server console UI after the port is bound
   serverConsole.start(io, PORT);
+  serverConsole.log('info', `PID ${process.pid} listening on port ${PORT}`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  serverConsole.log('warn', 'Shutting down — goodbye');
-  Physics.stop();
-  io.close();
+function shutdown(signal) {
+  serverConsole.log('warn', `Shutting down — signal ${signal}`);
+  try {
+    Physics.stop();
+  } catch (err) {
+    serverConsole.log('error', `Physics stop error: ${err?.message ?? err}`);
+  }
+  try {
+    io.close();
+  } catch (err) {
+    serverConsole.log('error', `Socket.IO close error: ${err?.message ?? err}`);
+  }
   httpServer.close(() => process.exit(0));
+}
+
+// Graceful shutdown + crash visibility
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('uncaughtException', (err) => {
+  serverConsole.log('error', `Uncaught exception: ${err?.stack ?? err}`);
+  shutdown('uncaughtException');
+});
+process.on('unhandledRejection', (reason) => {
+  serverConsole.log('error', `Unhandled rejection: ${reason?.stack ?? reason}`);
+});
+process.on('exit', (code) => {
+  serverConsole.log('warn', `Process exit with code ${code}`);
 });
