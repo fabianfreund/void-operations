@@ -31,6 +31,6 @@ RUN mkdir -p /app/server/db
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD-SHELL wget -qO- "http://localhost:${PORT:-3000}/health" || exit 1
 
 CMD ["node", "server/index.js"]
