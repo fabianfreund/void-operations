@@ -44,6 +44,7 @@ class SocketManager extends EventEmitter {
     this.socket.on('drone:mined', (data) => this.emit('drone:mined', data));
     this.socket.on('drone:offline', (data) => this.emit('drone:offline', data));
     this.socket.on('drone:emergency', (data) => this.emit('drone:emergency', data));
+    this.socket.on('server:maintenance', (data) => this.emit('server:maintenance', data));
     this.socket.on('error', (data) => this.emit('server:error', data));
   }
 
@@ -113,6 +114,10 @@ class SocketManager extends EventEmitter {
 
   resetPlayer(playerId) {
     return this._request('players:reset', { playerId }, 'players:reset', 'players:error');
+  }
+
+  disconnect() {
+    if (this.socket) this.socket.disconnect();
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────

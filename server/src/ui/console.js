@@ -39,6 +39,8 @@ const PROMPT = `${A.bold}${A.cyan}void>${A.reset} `;
 let rl = null;
 let rlClosed = false;
 let _io = null; // socket.io reference, set by start()
+const RESET_CONFIRM_WINDOW_MS = 30000;
+let pendingReset = null;
 
 // ─── Log helpers ──────────────────────────────────────────────────────────────
 
@@ -103,6 +105,77 @@ function printBanner(port) {
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
+function parseDeletePlayerArgs(args) {
+  let confirm = false;
+  let byId = false;
+  const targetParts = [];
+
+  for (const arg of args) {
+    if (arg === '--confirm') {
+      confirm = true;
+    } else if (arg === '--id') {
+      byId = true;
+    } else {
+      targetParts.push(arg);
+    }
+  }
+
+  return {
+    byId,
+    confirm,
+    target: targetParts.join(' ').trim(),
+  };
+}
+
+function findUserForDelete(target, byId) {
+  if (!target) return null;
+  if (byId) {
+    return db
+      .prepare('SELECT id, username, credits, last_seen FROM users WHERE id = ?')
+      .get(target);
+  }
+  return db
+    .prepare('SELECT id, username, credits, last_seen FROM users WHERE username = ?')
+    .get(target);
+}
+
+function deleteUserCascade(userId) {
+  return db.transaction((id) => {
+    const droneCount = db.prepare('SELECT COUNT(*) AS n FROM drones WHERE owner_id = ?').get(id).n;
+    const inventoryCount = db.prepare(
+      'SELECT COUNT(*) AS n FROM inventory WHERE drone_id IN (SELECT id FROM drones WHERE owner_id = ?)'
+    ).get(id).n;
+    const deletedUsers = db.prepare('DELETE FROM users WHERE id = ?').run(id).changes;
+    return { deletedUsers, droneCount, inventoryCount };
+  })(userId);
+}
+
+function generateResetToken() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase();
+}
+
+function clearExpiredReset() {
+  if (!pendingReset) return;
+  if (Date.now() > pendingReset.expiresAt) pendingReset = null;
+}
+
+function resetDatabaseData() {
+  return db.transaction(() => {
+    const users = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+    const drones = db.prepare('SELECT COUNT(*) AS n FROM drones').get().n;
+    const inventory = db.prepare('SELECT COUNT(*) AS n FROM inventory').get().n;
+    const events = db.prepare('SELECT COUNT(*) AS n FROM event_log').get().n;
+
+    db.prepare('DELETE FROM inventory').run();
+    db.prepare('DELETE FROM drones').run();
+    db.prepare('DELETE FROM users').run();
+    db.prepare('DELETE FROM event_log').run();
+    db.prepare('DELETE FROM sqlite_sequence').run();
+
+    return { users, drones, inventory, events };
+  })();
+}
+
 function handleCommand(input) {
   const [cmd, ...args] = input.trim().split(/\s+/);
 
@@ -116,6 +189,9 @@ function handleCommand(input) {
         ['tick',            'Force an immediate physics tick'],
         ['tickrate [ms]',   'Show or set physics tick interval in milliseconds'],
         ['broadcast <msg>', 'Send a system message to all connected clients'],
+        ['deleteplayer <username> [--confirm]', 'Delete one player and all owned entities'],
+        ['deleteplayer --id <userId> [--confirm]', 'Delete by user ID and cascade entities'],
+        ['resetdb',          'Reset all users/drones/inventory/event logs (2 confirmations)'],
         ['quit / exit',     'Gracefully shut down the server'],
       ];
       console.log('');
@@ -252,6 +328,109 @@ function handleCommand(input) {
       } else {
         log('warn', 'Socket.IO not ready yet');
       }
+      break;
+    }
+
+    case 'deleteplayer': {
+      const parsed = parseDeletePlayerArgs(args);
+      if (!parsed.target) {
+        console.log(c(A.dim, '  Usage: deleteplayer <username> [--confirm]\n'));
+        console.log(c(A.dim, '         deleteplayer --id <userId> [--confirm]\n'));
+        break;
+      }
+
+      const user = findUserForDelete(parsed.target, parsed.byId);
+      if (!user) {
+        log('warn', `Player not found: ${parsed.target}`);
+        break;
+      }
+
+      if (!parsed.confirm) {
+        const droneCount = db.prepare('SELECT COUNT(*) AS n FROM drones WHERE owner_id = ?').get(user.id).n;
+        log(
+          'warn',
+          `Pending delete for ${user.username} (${user.id}) with ${droneCount} drone(s). Re-run with --confirm to execute.`
+        );
+        break;
+      }
+
+      const result = deleteUserCascade(user.id);
+      try {
+        _io?.to(`user:${user.id}`).emit('server:maintenance', {
+          code: 'ACCOUNT_REMOVED',
+          reason: 'account_deleted',
+          message: 'Your account was removed by an administrator.',
+          ts: Date.now(),
+        });
+        _io?.in(`user:${user.id}`).disconnectSockets(true);
+      } catch (err) {
+        log('warn', `Could not disconnect sockets for ${user.username}: ${err?.message ?? err}`);
+      }
+
+      log(
+        'ok',
+        `Deleted player ${user.username} (${user.id}) | users=${result.deletedUsers}, drones=${result.droneCount}, inventoryRows=${result.inventoryCount}`
+      );
+      break;
+    }
+
+    case 'resetdb': {
+      clearExpiredReset();
+      const sub = (args[0] || '').toLowerCase();
+      const token = args[1];
+
+      if (sub !== 'confirm') {
+        log('warn', 'resetdb requested. This will DELETE all users, drones, inventory, and event logs.');
+        log('warn', 'First confirmation: run `resetdb confirm`');
+        break;
+      }
+
+      if (!token) {
+        const challenge = generateResetToken();
+        pendingReset = {
+          token: challenge,
+          expiresAt: Date.now() + RESET_CONFIRM_WINDOW_MS,
+        };
+        log('warn', `Second confirmation required within ${Math.floor(RESET_CONFIRM_WINDOW_MS / 1000)}s.`);
+        log('warn', `Run exactly: resetdb confirm ${challenge}`);
+        break;
+      }
+
+      if (!pendingReset) {
+        log('warn', 'No active reset confirmation. Start again with `resetdb confirm`.');
+        break;
+      }
+      if (Date.now() > pendingReset.expiresAt) {
+        pendingReset = null;
+        log('warn', 'Reset confirmation expired. Start again with `resetdb confirm`.');
+        break;
+      }
+      if (token !== pendingReset.token) {
+        log('error', 'Invalid reset confirmation token. Reset aborted.');
+        break;
+      }
+
+      pendingReset = null;
+      try {
+        _io?.emit('server:maintenance', {
+          code: 'SERVER_RESET',
+          reason: 'resetdb',
+          message: 'Server database reset in progress. You have been logged out.',
+          ts: Date.now(),
+        });
+      } catch (err) {
+        log('warn', `Could not broadcast reset notice: ${err?.message ?? err}`);
+      }
+      const result = resetDatabaseData();
+      try {
+        _io?.disconnectSockets(true);
+      } catch (err) {
+        log('warn', `Socket disconnect during reset failed: ${err?.message ?? err}`);
+      }
+      log(
+        'ok',
+        `Database reset complete | users=${result.users}, drones=${result.drones}, inventoryRows=${result.inventory}, eventLogs=${result.events}`
+      );
       break;
     }
 

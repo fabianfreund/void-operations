@@ -16,6 +16,21 @@ const { autoUpdateIfNeeded } = require('./updater');
 const { version: CLIENT_VERSION } = require('../package.json');
 
 const SERVER_URL = getServerUrl();
+let sessionEnded = false;
+
+function endSession(message) {
+  if (sessionEnded) return;
+  sessionEnded = true;
+  try {
+    socket.disconnect();
+  } catch {
+    // ignore
+  }
+  term.fullscreen(false);
+  term.grabInput(false);
+  term.bold.red(`\n${message}\n`);
+  process.exit(0);
+}
 
 async function main() {
   await autoUpdateIfNeeded(CLIENT_VERSION);
@@ -75,7 +90,18 @@ async function main() {
   });
 
   socket.on('disconnected', (reason) => {
-    dash.addLog(`Disconnected: ${reason}`, 'red');
+    const reasonText = reason || 'unknown';
+    const isExpectedClientQuit = reasonText === 'io client disconnect';
+    if (!isExpectedClientQuit) {
+      endSession(`Disconnected from server (${reasonText}). Please reconnect and log in again.`);
+    }
+  });
+
+  socket.on('server:maintenance', (payload = {}) => {
+    const message =
+      payload.message ||
+      'Server is restarting or deploying an update. You have been logged out.';
+    endSession(message);
   });
 
   // ── Auth ─────────────────────────────────────────────────────────────────

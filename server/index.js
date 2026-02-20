@@ -220,6 +220,16 @@ function shutdown(signal) {
 
   serverConsole.log('warn', `Shutting down — signal ${signal}`);
   serverConsole.log('warn', `Shutdown diagnostics: ${JSON.stringify(getRuntimeDiagnostics(signal))}`);
+  try {
+    io.emit('server:maintenance', {
+      code: 'SERVER_SHUTDOWN',
+      reason: signal,
+      message: `Server is shutting down (${signal}). Please reconnect and log in again shortly.`,
+      ts: Date.now(),
+    });
+  } catch (err) {
+    serverConsole.log('error', `Maintenance broadcast error: ${err?.message ?? err}`);
+  }
 
   forceExitTimer = setTimeout(() => {
     serverConsole.log('error', `Forced exit after ${SHUTDOWN_FORCE_EXIT_MS}ms waiting for graceful shutdown`);
